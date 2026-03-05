@@ -28,7 +28,7 @@ A lightweight macOS screenshot and annotation tool that lives in the menu bar.
 ## Building
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/shotty.git
+git clone https://github.com/squeaky-godzilla/shotty.git
 cd shotty
 swift build -c release
 ```
