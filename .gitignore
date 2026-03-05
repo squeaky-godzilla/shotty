@@ -1,0 +1,33 @@
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# Xcode
+*.xcodeproj/
+*.xcworkspace/
+xcuserdata/
+DerivedData/
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+*.xccheckout
+*.moved-aside
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+.Spotlight-V7
+.Trashes
+
+# Build output / app bundle — not tracked; built locally
+Shotty.app/
+
+# Empty assets catalog (no icons committed yet)
+Shotty/Assets.xcassets/
+
+# Logs
+/tmp/shotty.log
