@@ -1,3 +1,7 @@
+<p align="center">
+  <img src=".github/icon.png" width="128" alt="Shotty icon">
+</p>
+
 # Shotty
 
 A lightweight macOS screenshot and annotation tool that lives in the menu bar.
@@ -30,23 +34,11 @@ A lightweight macOS screenshot and annotation tool that lives in the menu bar.
 ```bash
 git clone https://github.com/squeaky-godzilla/shotty.git
 cd shotty
-swift build -c release
-```
-
-### Creating the app bundle
-
-The repo includes the `Shotty.app` shell (Info.plist, bundle structure) but not the compiled binary. After building, copy the binary in and ad-hoc sign:
-
-```bash
-cp .build/release/Shotty Shotty.app/Contents/MacOS/Shotty
-codesign --force --deep --sign - Shotty.app
-```
-
-Then launch:
-
-```bash
+./build.sh
 open Shotty.app
 ```
+
+`build.sh` compiles the release binary, copies it into the app bundle along with the icon and Info.plist, and ad-hoc signs the result.
 
 On the first capture attempt, macOS will show a **Screen Recording** consent sheet. Click **Allow**. Subsequent captures are silent.
 
@@ -57,7 +49,9 @@ Shotty/Sources/
 ├── App/
 │   ├── main.swift                        # Entry point
 │   ├── AppDelegate.swift                 # Menu bar, global hotkey
-│   └── Resources/Info.plist             # Bundle metadata
+│   └── Resources/
+│       ├── Info.plist                    # Bundle metadata
+│       └── AppIcon.icns                  # App icon
 ├── Capture/
 │   ├── CaptureMode.swift                 # Enum: fullScreen / window / selection
 │   ├── CaptureCoordinator.swift          # Orchestrates capture → editor flow

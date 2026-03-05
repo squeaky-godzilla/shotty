@@ -26,7 +26,7 @@ Icon?
 # Build output / app bundle — not tracked; built locally
 Shotty.app/
 
-# Empty assets catalog (no icons committed yet)
+# Assets catalog (icon is in Sources/App/Resources/AppIcon.icns instead)
 Shotty/Assets.xcassets/
 
 # Logs

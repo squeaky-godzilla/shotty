@@ -4,6 +4,8 @@
 <dict>
     <key>CFBundleName</key>
     <string>Shotty</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundleIdentifier</key>
     <string>com.shotty.app</string>
     <key>CFBundleVersion</key>
