@@ -1,5 +1,5 @@
 <p align="center">
-  <img src=".github/icon.png" width="128" alt="Shotty icon">
+  <img src=".github/icon.png" width="384" alt="Shotty icon">
 </p>
 
 # Shotty
