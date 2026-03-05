@@ -31,7 +31,8 @@
       "gh auth *": "ask",
       "gh release *": "ask",
       "gh pr *": "ask",
-      "gh *": "deny"
+      "gh *": "deny",
+      "aws *": "deny"
     }
   }
 }
