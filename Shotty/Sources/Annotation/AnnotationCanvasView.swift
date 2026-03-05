@@ -160,16 +160,42 @@ class AnnotationCanvasView: NSView {
     // MARK: - Render to Image
 
     func renderToImage() -> NSImage {
-        // Commit any active text first
-        if let tf = activeTextField {
-            commitTextAnnotation(tf)
+        if let tf = activeTextField { commitTextAnnotation(tf) }
+
+        // Render at the full backing resolution of the base image, not just the
+        // display size — this preserves the original capture quality.
+        let pixelSize = baseImage.size  // baseImage.size is already in pixels (set from CGImage)
+        let scale = pixelSize.width / bounds.size.width
+
+        guard let bitmapRep = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: Int(pixelSize.width),
+            pixelsHigh: Int(pixelSize.height),
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        ) else {
+            // Fallback
+            let img = NSImage(size: bounds.size)
+            img.lockFocus(); draw(bounds); img.unlockFocus()
+            return img
         }
 
-        let image = NSImage(size: bounds.size)
-        image.lockFocus()
+        NSGraphicsContext.saveGraphicsState()
+        let ctx = NSGraphicsContext(bitmapImageRep: bitmapRep)
+        NSGraphicsContext.current = ctx
+        // Scale up so draw() coordinates (points) map to full pixel resolution
+        ctx?.cgContext.scaleBy(x: scale, y: scale)
         draw(bounds)
-        image.unlockFocus()
-        return image
+        NSGraphicsContext.restoreGraphicsState()
+
+        let result = NSImage(size: pixelSize)
+        result.addRepresentation(bitmapRep)
+        return result
     }
 
     // MARK: - Cursor

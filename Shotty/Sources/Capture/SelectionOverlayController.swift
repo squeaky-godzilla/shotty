@@ -79,11 +79,13 @@ final class SelectionOverlayController {
             finish(nil); return
         }
 
-        let scale = ns.backingScaleFactor
+        // Use the display's native pixel ratio for maximum resolution.
+        // SCStreamConfiguration.width/height are in pixels; sourceRect is in points.
+        let scale = CGFloat(display.width) / ns.frame.width  // true pixel:point ratio
         let filter = SCContentFilter(display: display, excludingWindows: [])
         let cfg = SCStreamConfiguration()
-        cfg.width  = max(1, Int(rect.width  * scale))
-        cfg.height = max(1, Int(rect.height * scale))
+        cfg.width  = max(1, Int((rect.width  * scale).rounded()))
+        cfg.height = max(1, Int((rect.height * scale).rounded()))
         cfg.sourceRect = CGRect(
             x: rect.origin.x - ns.frame.origin.x,
             y: ns.frame.height - (rect.origin.y - ns.frame.origin.y) - rect.height,
@@ -93,10 +95,11 @@ final class SelectionOverlayController {
         cfg.scalesToFit = false
         cfg.showsCursor = false
 
-        slog("captureRect \(cfg.width)x\(cfg.height) sourceRect=\(cfg.sourceRect)")
+        slog("captureRect pixels=\(cfg.width)x\(cfg.height) scale=\(scale) sourceRect=\(cfg.sourceRect)")
         SCScreenshotManager.captureImage(contentFilter: filter, configuration: cfg) { [weak self] cgImage, error in
             DispatchQueue.main.async {
                 if let cgImage {
+                    // size in points so AppKit displays at correct logical size
                     self?.finish(NSImage(cgImage: cgImage, size: rect.size))
                 } else {
                     slog("selection capture error: \(error?.localizedDescription ?? "nil")")

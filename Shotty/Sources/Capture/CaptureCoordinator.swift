@@ -39,12 +39,12 @@ final class CaptureCoordinator: NSObject, NSWindowDelegate {
 
     private func captureFullScreen(content: SCShareableContent) {
         guard let display = content.displays.first else { onDone(); return }
-        let scale = display.nsScreen?.backingScaleFactor ?? 2.0
 
         let filter = SCContentFilter(display: display, excludingWindows: [])
         let cfg = SCStreamConfiguration()
-        cfg.width  = Int(CGFloat(display.width)  * scale)
-        cfg.height = Int(CGFloat(display.height) * scale)
+        // display.width/height are already in native pixels — use them directly.
+        cfg.width  = display.width
+        cfg.height = display.height
         cfg.showsCursor = false
 
         // Hide our own overlay before capturing.
