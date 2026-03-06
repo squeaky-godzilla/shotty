@@ -9,6 +9,20 @@ class AnnotationEditorViewController: NSViewController {
     private let model = AnnotationModel()
     private var canvasView: AnnotationCanvasView!
     private var emojiBtn: NSButton!
+    private var colorPopup: NSPopUpButton!
+
+    // Preset colours — (display name, NSColor)
+    private static let presetColors: [(String, NSColor)] = [
+        ("Red",     .systemRed),
+        ("Orange",  .systemOrange),
+        ("Yellow",  .systemYellow),
+        ("Green",   .systemGreen),
+        ("Blue",    .systemBlue),
+        ("Purple",  .systemPurple),
+        ("Pink",    .systemPink),
+        ("White",   .white),
+        ("Black",   .black),
+    ]
 
     init(image: NSImage, displaySize: CGSize, onClose: @escaping () -> Void) {
         self.image = image
@@ -22,20 +36,19 @@ class AnnotationEditorViewController: NSViewController {
     // MARK: - View Loading
 
     override func loadView() {
+        let toolbarHeight: CGFloat = 96
         let container = NSView(frame: NSRect(origin: .zero,
                                             size: CGSize(width: displaySize.width,
-                                                         height: displaySize.height + 48)))
+                                                         height: displaySize.height + toolbarHeight)))
 
-        // Toolbar
         let toolbar = buildToolbar()
-        toolbar.frame = NSRect(x: 0, y: displaySize.height, width: displaySize.width, height: 48)
+        toolbar.frame = NSRect(x: 0, y: displaySize.height,
+                               width: displaySize.width, height: toolbarHeight)
         toolbar.autoresizingMask = [.width, .minYMargin]
 
-        // Canvas — draws at the full original image resolution
         canvasView = AnnotationCanvasView(image: image, model: model)
         canvasView.frame = CGRect(origin: .zero, size: image.size)
 
-        // Scroll view to contain the canvas
         let scrollView = NSScrollView(frame: NSRect(origin: .zero, size: displaySize))
         scrollView.documentView = canvasView
         scrollView.hasVerticalScroller = true
@@ -46,7 +59,6 @@ class AnnotationEditorViewController: NSViewController {
 
         container.addSubview(scrollView)
         container.addSubview(toolbar)
-
         view = container
     }
 
@@ -58,8 +70,11 @@ class AnnotationEditorViewController: NSViewController {
         bar.state = .active
 
         func iconBtn(_ sfSymbol: String, _ tip: String, _ sel: Selector) -> NSButton {
-            let b = NSButton(frame: NSRect(x: 0, y: 0, width: 32, height: 32))
-            b.image = NSImage(systemSymbolName: sfSymbol, accessibilityDescription: tip)
+            let cfg = NSImage.SymbolConfiguration(pointSize: 22, weight: .medium)
+            let b = NSButton(frame: NSRect(x: 0, y: 0, width: 48, height: 48))
+            b.image = NSImage(systemSymbolName: sfSymbol,
+                              accessibilityDescription: tip)?
+                      .withSymbolConfiguration(cfg)
             b.imageScaling = .scaleProportionallyUpOrDown
             b.isBordered = false
             b.toolTip = tip
@@ -68,21 +83,27 @@ class AnnotationEditorViewController: NSViewController {
             return b
         }
 
-        let penBtn     = iconBtn("pencil",               "Pen",              #selector(selectPen))
-        let eraserBtn  = iconBtn("eraser",               "Eraser",           #selector(selectEraser))
-        let textBtn    = iconBtn("textformat",            "Text",             #selector(selectText))
-        let stickerBtn = iconBtn("face.smiling",          "Sticker",          #selector(selectSticker))
-        let undoBtn    = iconBtn("arrow.uturn.backward",  "Undo (⌘Z)",        #selector(undoAction))
-        let copyBtn    = iconBtn("doc.on.clipboard",      "Copy to Clipboard",#selector(copyToClipboard))
-        let saveBtn    = iconBtn("square.and.arrow.down", "Save PNG",         #selector(saveAsPNG))
+        let penBtn     = iconBtn("pencil",               "Pen",               #selector(selectPen))
+        let eraserBtn  = iconBtn("eraser",               "Eraser",            #selector(selectEraser))
+        let textBtn    = iconBtn("textformat",            "Text",              #selector(selectText))
+        let stickerBtn = iconBtn("face.smiling",          "Sticker",           #selector(selectSticker))
+        let undoBtn    = iconBtn("arrow.uturn.backward",  "Undo (⌘Z)",         #selector(undoAction))
+        let copyBtn    = iconBtn("doc.on.clipboard",      "Copy to Clipboard", #selector(copyToClipboard))
+        let saveBtn    = iconBtn("square.and.arrow.down", "Save PNG",          #selector(saveAsPNG))
 
-        // Colour well
-        let colorWell = NSColorWell(frame: NSRect(x: 0, y: 0, width: 28, height: 28))
-        colorWell.color = model.currentColor
-        colorWell.target = self
-        colorWell.action = #selector(colorChanged(_:))
+        // Colour preset popup
+        colorPopup = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 100, height: 28))
+        colorPopup.target = self
+        colorPopup.action = #selector(colorPresetChanged(_:))
+        for (name, color) in Self.presetColors {
+            let item = NSMenuItem(title: name, action: nil, keyEquivalent: "")
+            item.image = colorSwatch(color)
+            colorPopup.menu?.addItem(item)
+        }
+        colorPopup.selectItem(at: 0) // default: Red
+        model.currentColor = Self.presetColors[0].1
 
-        // Stroke width label + stepper
+        // Stroke width stepper
         let widthLabel   = NSTextField(labelWithString: "Size:")
         let widthStepper = NSStepper(frame: NSRect(x: 0, y: 0, width: 19, height: 27))
         widthStepper.minValue = 1
@@ -91,35 +112,34 @@ class AnnotationEditorViewController: NSViewController {
         widthStepper.target = self
         widthStepper.action = #selector(lineWidthChanged(_:))
 
-        // Emoji button (shows selected emoji, opens picker)
+        // Emoji button
         emojiBtn = NSButton(title: model.selectedEmoji,
                             target: self,
                             action: #selector(showEmojiPicker(_:)))
-        emojiBtn.font = NSFont.systemFont(ofSize: 20)
+        emojiBtn.font = NSFont.systemFont(ofSize: 26)
         emojiBtn.isBordered = false
         emojiBtn.toolTip = "Choose sticker"
 
-        // Divider
         func sep() -> NSView {
-            let b = NSBox()
-            b.boxType = .separator
-            return b
+            let b = NSBox(); b.boxType = .separator; return b
         }
 
-        let leftItems: [NSView] = [penBtn, eraserBtn, textBtn, stickerBtn, sep(), colorWell, widthLabel, widthStepper, sep(), emojiBtn]
+        let leftItems: [NSView]  = [penBtn, eraserBtn, textBtn, stickerBtn,
+                                    sep(), colorPopup, widthLabel, widthStepper,
+                                    sep(), emojiBtn]
         let rightItems: [NSView] = [undoBtn, sep(), copyBtn, saveBtn]
 
         let leftStack  = NSStackView(views: leftItems)
         leftStack.orientation = .horizontal
         leftStack.alignment = .centerY
-        leftStack.spacing = 6
-        leftStack.edgeInsets = NSEdgeInsets(top: 6, left: 10, bottom: 6, right: 6)
+        leftStack.spacing = 8
+        leftStack.edgeInsets = NSEdgeInsets(top: 8, left: 12, bottom: 8, right: 8)
 
         let rightStack = NSStackView(views: rightItems)
         rightStack.orientation = .horizontal
         rightStack.alignment = .centerY
-        rightStack.spacing = 6
-        rightStack.edgeInsets = NSEdgeInsets(top: 6, left: 6, bottom: 6, right: 10)
+        rightStack.spacing = 8
+        rightStack.edgeInsets = NSEdgeInsets(top: 8, left: 8, bottom: 8, right: 12)
 
         leftStack.translatesAutoresizingMaskIntoConstraints  = false
         rightStack.translatesAutoresizingMaskIntoConstraints = false
@@ -130,13 +150,23 @@ class AnnotationEditorViewController: NSViewController {
             leftStack.leadingAnchor.constraint(equalTo: bar.leadingAnchor),
             leftStack.topAnchor.constraint(equalTo: bar.topAnchor),
             leftStack.bottomAnchor.constraint(equalTo: bar.bottomAnchor),
-
             rightStack.trailingAnchor.constraint(equalTo: bar.trailingAnchor),
             rightStack.topAnchor.constraint(equalTo: bar.topAnchor),
             rightStack.bottomAnchor.constraint(equalTo: bar.bottomAnchor),
         ])
 
         return bar
+    }
+
+    // Build a 16×16 filled circle swatch image for a colour menu item.
+    private func colorSwatch(_ color: NSColor) -> NSImage {
+        let size = CGSize(width: 16, height: 16)
+        let img = NSImage(size: size)
+        img.lockFocus()
+        color.setFill()
+        NSBezierPath(ovalIn: CGRect(origin: .zero, size: size)).fill()
+        img.unlockFocus()
+        return img
     }
 
     // MARK: - Tool selection
@@ -146,10 +176,12 @@ class AnnotationEditorViewController: NSViewController {
     @objc private func selectText()    { model.currentTool = .text;    canvasView.updateCursor() }
     @objc private func selectSticker() { model.currentTool = .sticker; canvasView.updateCursor() }
 
-    // MARK: - Colour
+    // MARK: - Colour preset
 
-    @objc private func colorChanged(_ sender: NSColorWell) {
-        model.currentColor = sender.color
+    @objc private func colorPresetChanged(_ sender: NSPopUpButton) {
+        let idx = sender.indexOfSelectedItem
+        guard idx >= 0, idx < Self.presetColors.count else { return }
+        model.currentColor = Self.presetColors[idx].1
     }
 
     // MARK: - Stroke width
@@ -162,7 +194,7 @@ class AnnotationEditorViewController: NSViewController {
 
     @objc private func showEmojiPicker(_ sender: NSButton) {
         let picker = EmojiPickerViewController(selected: model.selectedEmoji) { [weak self] emoji in
-            guard let self = self else { return }
+            guard let self else { return }
             self.model.selectedEmoji = emoji
             self.model.currentTool = .sticker
             self.emojiBtn.title = emoji
@@ -187,10 +219,7 @@ class AnnotationEditorViewController: NSViewController {
         showFlash("Copied to clipboard!")
     }
 
-    // Respond to Cmd+C via the responder chain (Edit menu or keyboard shortcut).
-    @objc func copy(_ sender: Any?) {
-        copyToClipboard()
-    }
+    @objc func copy(_ sender: Any?) { copyToClipboard() }
 
     // MARK: - Save PNG
 
@@ -231,9 +260,7 @@ class AnnotationEditorViewController: NSViewController {
             NSAnimationContext.runAnimationGroup { ctx in
                 ctx.duration = 0.3
                 label.animator().alphaValue = 0
-            } completionHandler: {
-                label.removeFromSuperview()
-            }
+            } completionHandler: { label.removeFromSuperview() }
         }
     }
 }

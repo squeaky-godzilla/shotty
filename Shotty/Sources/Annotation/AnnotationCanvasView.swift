@@ -1,11 +1,9 @@
 import AppKit
 
-/// NSView subclass that renders the screenshot + all annotations and handles mouse/keyboard input.
 class AnnotationCanvasView: NSView {
     var model: AnnotationModel
     var baseImage: NSImage
 
-    // Text editing state
     private var activeTextField: NSTextField?
     private var activeTextAnnotationID: UUID?
 
@@ -54,14 +52,25 @@ class AnnotationCanvasView: NSView {
             ]
             let str = NSAttributedString(string: sticker.emoji, attributes: attrs)
             let sz = str.size()
-            str.draw(at: CGPoint(x: sticker.center.x - sz.width / 2, y: sticker.center.y - sz.height / 2))
+            str.draw(at: CGPoint(x: sticker.center.x - sz.width / 2,
+                                 y: sticker.center.y - sz.height / 2))
         }
     }
 
     private func drawStroke(_ stroke: StrokeAnnotation, in ctx: CGContext) {
         guard stroke.points.count > 1 else { return }
         ctx.saveGState()
-        ctx.setStrokeColor(stroke.color.cgColor)
+        if stroke.isEraser {
+            // Erase by clearing pixels — blendMode .clear punches through to transparent,
+            // then the view's opaque background (the base image) shows through correctly
+            // when rendered into a bitmap context (renderToImage). On-screen we use
+            // destinationOut which visually removes drawn content while keeping the image.
+            ctx.setBlendMode(.clear)
+            ctx.setStrokeColor(NSColor.white.cgColor)
+        } else {
+            ctx.setBlendMode(.normal)
+            ctx.setStrokeColor(stroke.color.cgColor)
+        }
         ctx.setLineWidth(stroke.lineWidth)
         ctx.setLineCap(.round)
         ctx.setLineJoin(.round)
@@ -78,16 +87,10 @@ class AnnotationCanvasView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         let pt = convert(event.locationInWindow, from: nil)
-
-        // Dismiss active text field on click outside
-        if let tf = activeTextField {
-            commitTextAnnotation(tf)
-        }
+        if let tf = activeTextField { commitTextAnnotation(tf) }
 
         switch model.currentTool {
-        case .pen:
-            model.beginStroke(at: pt)
-        case .eraser:
+        case .pen, .eraser:
             model.beginStroke(at: pt)
         case .text:
             startTextAnnotation(at: pt)
@@ -126,7 +129,7 @@ class AnnotationCanvasView: NSView {
         tf.placeholderString = "Type here…"
         tf.focusRingType = .none
         tf.delegate = self
-        tf.tag = 99 // sentinel
+        tf.tag = 99
         addSubview(tf)
         window?.makeFirstResponder(tf)
         activeTextField = tf
@@ -135,6 +138,17 @@ class AnnotationCanvasView: NSView {
     func commitTextAnnotation(_ tf: NSTextField) {
         guard let annotationID = activeTextAnnotationID else { return }
         model.finishTextEditing(id: annotationID, text: tf.stringValue)
+        tf.removeFromSuperview()
+        activeTextField = nil
+        activeTextAnnotationID = nil
+        needsDisplay = true
+    }
+
+    func cancelTextAnnotation(_ tf: NSTextField) {
+        // Remove the placeholder text entry without committing anything.
+        if let annotationID = activeTextAnnotationID {
+            model.cancelText(id: annotationID)
+        }
         tf.removeFromSuperview()
         activeTextField = nil
         activeTextAnnotationID = nil
@@ -150,7 +164,6 @@ class AnnotationCanvasView: NSView {
             model.undoLast()
             needsDisplay = true
         case "c":
-            // Forward up the responder chain so AnnotationEditorViewController.copy(_:) handles it.
             nextResponder?.tryToPerform(#selector(NSText.copy(_:)), with: self)
         default:
             super.keyDown(with: event)
@@ -162,9 +175,7 @@ class AnnotationCanvasView: NSView {
     func renderToImage() -> NSImage {
         if let tf = activeTextField { commitTextAnnotation(tf) }
 
-        // Render at the full backing resolution of the base image, not just the
-        // display size — this preserves the original capture quality.
-        let pixelSize = baseImage.size  // baseImage.size is already in pixels (set from CGImage)
+        let pixelSize = baseImage.size
         let scale = pixelSize.width / bounds.size.width
 
         guard let bitmapRep = NSBitmapImageRep(
@@ -179,7 +190,6 @@ class AnnotationCanvasView: NSView {
             bytesPerRow: 0,
             bitsPerPixel: 0
         ) else {
-            // Fallback
             let img = NSImage(size: bounds.size)
             img.lockFocus(); draw(bounds); img.unlockFocus()
             return img
@@ -188,7 +198,6 @@ class AnnotationCanvasView: NSView {
         NSGraphicsContext.saveGraphicsState()
         let ctx = NSGraphicsContext(bitmapImageRep: bitmapRep)
         NSGraphicsContext.current = ctx
-        // Scale up so draw() coordinates (points) map to full pixel resolution
         ctx?.cgContext.scaleBy(x: scale, y: scale)
         draw(bounds)
         NSGraphicsContext.restoreGraphicsState()
@@ -214,9 +223,17 @@ class AnnotationCanvasView: NSView {
     }
 }
 
+// MARK: - NSTextFieldDelegate
+
 extension AnnotationCanvasView: NSTextFieldDelegate {
     func controlTextDidEndEditing(_ obj: Notification) {
         guard let tf = obj.object as? NSTextField, tf.tag == 99 else { return }
-        commitTextAnnotation(tf)
+        // Check if ended due to Escape (movement == cancel)
+        if let movement = (obj.userInfo?["NSTextMovement"] as? Int),
+           movement == NSTextMovement.cancel.rawValue {
+            cancelTextAnnotation(tf)
+        } else {
+            commitTextAnnotation(tf)
+        }
     }
 }

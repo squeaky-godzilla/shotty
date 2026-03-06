@@ -106,6 +106,10 @@ class AnnotationModel {
         }
     }
 
+    func cancelText(id: UUID) {
+        texts.removeAll { $0.id == id }
+    }
+
     // MARK: Sticker
 
     func addSticker(at point: CGPoint) {

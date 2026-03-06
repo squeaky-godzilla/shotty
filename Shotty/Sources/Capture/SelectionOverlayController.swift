@@ -79,32 +79,43 @@ final class SelectionOverlayController {
             finish(nil); return
         }
 
-        // Use the display's native pixel ratio for maximum resolution.
-        // SCStreamConfiguration.width/height are in pixels; sourceRect is in points.
-        let scale = CGFloat(display.width) / ns.frame.width  // true pixel:point ratio
+        // Capture the FULL display at native resolution, then crop in software.
+        // This avoids SCK's internal resampling when rendering a small sourceRect,
+        // which is what caused the lower quality compared to full-screen capture.
+        let scale = ns.backingScaleFactor
         let filter = SCContentFilter(display: display, excludingWindows: [])
         let cfg = SCStreamConfiguration()
-        cfg.width  = max(1, Int((rect.width  * scale).rounded()))
-        cfg.height = max(1, Int((rect.height * scale).rounded()))
-        cfg.sourceRect = CGRect(
-            x: rect.origin.x - ns.frame.origin.x,
-            y: ns.frame.height - (rect.origin.y - ns.frame.origin.y) - rect.height,
-            width: rect.width,
-            height: rect.height
-        )
-        cfg.scalesToFit = false
+        cfg.width  = display.width
+        cfg.height = display.height
+        cfg.captureResolution = .best
         cfg.showsCursor = false
 
-        slog("captureRect pixels=\(cfg.width)x\(cfg.height) scale=\(scale) sourceRect=\(cfg.sourceRect)")
+        // Compute crop rect in pixels within the full display image (top-left origin).
+        let relX = (rect.origin.x - ns.frame.origin.x) * scale
+        let relY = (ns.frame.height - (rect.origin.y - ns.frame.origin.y) - rect.height) * scale
+        let cropRect = CGRect(
+            x: relX.rounded(),
+            y: relY.rounded(),
+            width:  (rect.width  * scale).rounded(),
+            height: (rect.height * scale).rounded()
+        )
+
+        slog("captureRect full=\(cfg.width)x\(cfg.height) crop=\(cropRect) scale=\(scale)")
         SCScreenshotManager.captureImage(contentFilter: filter, configuration: cfg) { [weak self] cgImage, error in
             DispatchQueue.main.async {
-                if let cgImage {
-                    // size in points so AppKit displays at correct logical size
-                    self?.finish(NSImage(cgImage: cgImage, size: rect.size))
-                } else {
+                guard let cgImage else {
                     slog("selection capture error: \(error?.localizedDescription ?? "nil")")
                     self?.finish(nil)
+                    return
                 }
+                // Crop to the selected region.
+                guard let cropped = cgImage.cropping(to: cropRect) else {
+                    slog("selection crop failed for \(cropRect) in \(cgImage.width)x\(cgImage.height)")
+                    self?.finish(nil)
+                    return
+                }
+                slog("captureRect cropped=\(cropped.width)x\(cropped.height)")
+                self?.finish(NSImage(cgImage: cropped, size: rect.size))
             }
         }
     }

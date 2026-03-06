@@ -77,6 +77,7 @@ final class WindowPickerOverlayController {
         let cfg = SCStreamConfiguration()
         cfg.width  = max(1, Int(scWindow.frame.width  * scale))
         cfg.height = max(1, Int(scWindow.frame.height * scale))
+        cfg.captureResolution = .best
         cfg.showsCursor = false
 
         // Small delay so overlay is fully gone before capture.
