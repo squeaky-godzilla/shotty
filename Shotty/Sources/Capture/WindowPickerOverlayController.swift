@@ -1,6 +1,10 @@
 import AppKit
 import ScreenCaptureKit
 
+private final class KeyableWindow: NSWindow {
+    override var canBecomeKey: Bool { true }
+}
+
 final class WindowPickerOverlayController {
     private var overlayWindow: NSWindow?
     private var completion: ((NSImage?) -> Void)?
@@ -22,7 +26,7 @@ final class WindowPickerOverlayController {
     private func present(windows: [SCWindow]) {
         guard let screen = NSScreen.main else { finish(nil); return }
 
-        let win = NSWindow(
+        let win = KeyableWindow(
             contentRect: screen.frame,
             styleMask: .borderless,
             backing: .buffered,

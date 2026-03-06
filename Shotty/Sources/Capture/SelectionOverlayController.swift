@@ -1,6 +1,12 @@
 import AppKit
 import ScreenCaptureKit
 
+// Borderless NSWindow returns false for canBecomeKeyWindow by default,
+// preventing keyboard events from reaching the view. Override to fix.
+private final class KeyableWindow: NSWindow {
+    override var canBecomeKey: Bool { true }
+}
+
 final class SelectionOverlayController {
     private var overlayWindows: [NSWindow] = []
     private var completion: ((NSImage?) -> Void)?
@@ -30,7 +36,7 @@ final class SelectionOverlayController {
     }
 
     private func makeOverlayWindow(for screen: NSScreen) -> NSWindow {
-        let win = NSWindow(
+        let win = KeyableWindow(
             contentRect: screen.frame,
             styleMask: .borderless,
             backing: .buffered,
