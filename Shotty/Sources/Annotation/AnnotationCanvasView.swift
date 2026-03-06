@@ -7,6 +7,10 @@ class AnnotationCanvasView: NSView {
     private var activeTextField: NSTextField?
     private var activeTextAnnotationID: UUID?
 
+    // Arrow tool state: first click sets origin, mouse move previews, second click commits
+    private var arrowOrigin: CGPoint?
+    private var arrowPreviewTip: CGPoint?
+
     init(image: NSImage, model: AnnotationModel) {
         self.baseImage = image
         self.model = model
@@ -55,6 +59,59 @@ class AnnotationCanvasView: NSView {
             str.draw(at: CGPoint(x: sticker.center.x - sz.width / 2,
                                  y: sticker.center.y - sz.height / 2))
         }
+
+        // 6. Committed arrows
+        for arrow in model.arrows {
+            drawArrow(from: arrow.from, to: arrow.to,
+                      color: arrow.color, lineWidth: arrow.lineWidth, in: ctx)
+        }
+
+        // 7. Arrow preview (while placing second point)
+        if let origin = arrowOrigin, let tip = arrowPreviewTip {
+            drawArrow(from: origin, to: tip,
+                      color: model.currentColor, lineWidth: model.lineWidth, in: ctx)
+        }
+    }
+
+    private func drawArrow(from: CGPoint, to: CGPoint,
+                           color: NSColor, lineWidth: CGFloat, in ctx: CGContext) {
+        let dx = to.x - from.x
+        let dy = to.y - from.y
+        let length = sqrt(dx * dx + dy * dy)
+        guard length > 4 else { return }
+
+        // Arrowhead size scales with line width but has a sensible minimum
+        let headLen = max(lineWidth * 5, 16.0)
+        let headAngle = CGFloat.pi / 6  // 30°
+
+        let angle = atan2(dy, dx)
+        let left  = CGPoint(x: to.x - headLen * cos(angle - headAngle),
+                            y: to.y - headLen * sin(angle - headAngle))
+        let right = CGPoint(x: to.x - headLen * cos(angle + headAngle),
+                            y: to.y - headLen * sin(angle + headAngle))
+
+        ctx.saveGState()
+        ctx.setStrokeColor(color.cgColor)
+        ctx.setFillColor(color.cgColor)
+        ctx.setLineWidth(lineWidth)
+        ctx.setLineCap(.round)
+        ctx.setLineJoin(.round)
+
+        // Shaft — stop slightly before tip so it doesn't poke through the head
+        let shaftTip = CGPoint(x: to.x - headLen * 0.6 * cos(angle),
+                               y: to.y - headLen * 0.6 * sin(angle))
+        ctx.move(to: from)
+        ctx.addLine(to: shaftTip)
+        ctx.strokePath()
+
+        // Filled arrowhead
+        ctx.move(to: to)
+        ctx.addLine(to: left)
+        ctx.addLine(to: right)
+        ctx.closePath()
+        ctx.fillPath()
+
+        ctx.restoreGState()
     }
 
     private func drawStroke(_ stroke: StrokeAnnotation, in ctx: CGContext) {
@@ -97,7 +154,25 @@ class AnnotationCanvasView: NSView {
         case .sticker:
             model.addSticker(at: pt)
             needsDisplay = true
+        case .arrow:
+            if let origin = arrowOrigin {
+                // Second click — commit the arrow
+                model.addArrow(from: origin, to: pt)
+                arrowOrigin = nil
+                arrowPreviewTip = nil
+            } else {
+                // First click — set origin
+                arrowOrigin = pt
+                arrowPreviewTip = pt
+            }
+            needsDisplay = true
         }
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        guard model.currentTool == .arrow, arrowOrigin != nil else { return }
+        arrowPreviewTip = convert(event.locationInWindow, from: nil)
+        needsDisplay = true
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -158,6 +233,16 @@ class AnnotationCanvasView: NSView {
     // MARK: - Keyboard
 
     override func keyDown(with event: NSEvent) {
+        // Escape cancels a pending arrow origin
+        if event.keyCode == 53 {
+            if arrowOrigin != nil {
+                arrowOrigin = nil
+                arrowPreviewTip = nil
+                needsDisplay = true
+                return
+            }
+            super.keyDown(with: event); return
+        }
         guard event.modifierFlags.contains(.command) else { super.keyDown(with: event); return }
         switch event.charactersIgnoringModifiers {
         case "z":
@@ -215,7 +300,10 @@ class AnnotationCanvasView: NSView {
         case .eraser:  NSCursor.disappearingItem.set()
         case .text:    NSCursor.iBeam.set()
         case .sticker: NSCursor.pointingHand.set()
+        case .arrow:   NSCursor.crosshair.set()
         }
+        // Arrow tool needs mouseMoved events for live preview
+        window?.acceptsMouseMovedEvents = (model.currentTool == .arrow)
     }
 
     override func resetCursorRects() {

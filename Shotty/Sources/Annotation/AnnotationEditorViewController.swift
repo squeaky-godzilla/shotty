@@ -87,6 +87,7 @@ class AnnotationEditorViewController: NSViewController {
         let eraserBtn  = iconBtn("eraser",               "Eraser",            #selector(selectEraser))
         let textBtn    = iconBtn("textformat",            "Text",              #selector(selectText))
         let stickerBtn = iconBtn("face.smiling",          "Sticker",           #selector(selectSticker))
+        let arrowBtn   = iconBtn("arrow.up.right",        "Arrow",             #selector(selectArrow))
         let undoBtn    = iconBtn("arrow.uturn.backward",  "Undo (⌘Z)",         #selector(undoAction))
         let copyBtn    = iconBtn("doc.on.clipboard",      "Copy to Clipboard", #selector(copyToClipboard))
         let saveBtn    = iconBtn("square.and.arrow.down", "Save PNG",          #selector(saveAsPNG))
@@ -124,7 +125,7 @@ class AnnotationEditorViewController: NSViewController {
             let b = NSBox(); b.boxType = .separator; return b
         }
 
-        let leftItems: [NSView]  = [penBtn, eraserBtn, textBtn, stickerBtn,
+        let leftItems: [NSView]  = [penBtn, eraserBtn, textBtn, arrowBtn, stickerBtn,
                                     sep(), colorPopup, widthLabel, widthStepper,
                                     sep(), emojiBtn]
         let rightItems: [NSView] = [undoBtn, sep(), copyBtn, saveBtn]
@@ -175,6 +176,7 @@ class AnnotationEditorViewController: NSViewController {
     @objc private func selectEraser()  { model.currentTool = .eraser;  canvasView.updateCursor() }
     @objc private func selectText()    { model.currentTool = .text;    canvasView.updateCursor() }
     @objc private func selectSticker() { model.currentTool = .sticker; canvasView.updateCursor() }
+    @objc private func selectArrow()   { model.currentTool = .arrow;   canvasView.updateCursor() }
 
     // MARK: - Colour preset
 

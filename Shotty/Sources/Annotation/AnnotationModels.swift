@@ -7,6 +7,7 @@ enum AnnotationTool: Equatable {
     case text
     case sticker
     case eraser
+    case arrow
 }
 
 // MARK: - Annotation items
@@ -36,12 +37,21 @@ struct StickerAnnotation {
     var size: CGFloat
 }
 
+struct ArrowAnnotation {
+    let id = UUID()
+    var from: CGPoint
+    var to: CGPoint
+    var color: NSColor
+    var lineWidth: CGFloat
+}
+
 // MARK: - Undo action stack entry
 
 private enum UndoAction {
     case stroke
     case text
     case sticker
+    case arrow
 }
 
 // MARK: - Canvas model
@@ -50,6 +60,7 @@ class AnnotationModel {
     var strokes:  [StrokeAnnotation]  = []
     var texts:    [TextAnnotation]    = []
     var stickers: [StickerAnnotation] = []
+    var arrows:   [ArrowAnnotation]   = []
 
     var currentTool:   AnnotationTool = .pen
     var currentColor:  NSColor        = .systemRed
@@ -118,6 +129,14 @@ class AnnotationModel {
         undoStack.append(.sticker)
     }
 
+    // MARK: Arrow
+
+    func addArrow(from: CGPoint, to: CGPoint) {
+        let a = ArrowAnnotation(from: from, to: to, color: currentColor, lineWidth: lineWidth)
+        arrows.append(a)
+        undoStack.append(.arrow)
+    }
+
     // MARK: Undo
 
     func undoLast() {
@@ -127,6 +146,7 @@ class AnnotationModel {
         case .stroke:  if !strokes.isEmpty  { strokes.removeLast()  }
         case .text:    if !texts.isEmpty    { texts.removeLast()    }
         case .sticker: if !stickers.isEmpty { stickers.removeLast() }
+        case .arrow:   if !arrows.isEmpty   { arrows.removeLast()   }
         }
     }
 }
