@@ -38,7 +38,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func setupStatusBar() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        statusItem?.button?.image = NSImage(systemSymbolName: "camera.viewfinder",
+        statusItem?.button?.image = NSImage(systemSymbolName: "camera",
                                             accessibilityDescription: "Shotty")
         let menu = NSMenu()
         menu.addItem(withTitle: "Capture Full Screen", action: #selector(captureFullScreen), keyEquivalent: "")
