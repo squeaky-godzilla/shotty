@@ -10,6 +10,7 @@ class AnnotationEditorViewController: NSViewController {
     private var canvasView: AnnotationCanvasView!
     private var emojiBtn: NSButton!
     private var colorPopup: NSPopUpButton!
+    private var thicknessControl: NSSegmentedControl!
 
     // Preset colours — (display name, NSColor)
     private static let presetColors: [(String, NSColor)] = [
@@ -37,28 +38,44 @@ class AnnotationEditorViewController: NSViewController {
 
     override func loadView() {
         let toolbarHeight: CGFloat = 96
+        // Use a flexible container that can accommodate minimum window size
         let container = NSView(frame: NSRect(origin: .zero,
-                                            size: CGSize(width: displaySize.width,
-                                                         height: displaySize.height + toolbarHeight)))
+                                            size: CGSize(width: max(displaySize.width, 640),
+                                                         height: max(displaySize.height, 400 - toolbarHeight) + toolbarHeight)))
 
         let toolbar = buildToolbar()
-        toolbar.frame = NSRect(x: 0, y: displaySize.height,
-                               width: displaySize.width, height: toolbarHeight)
-        toolbar.autoresizingMask = [.width, .minYMargin]
+        toolbar.translatesAutoresizingMaskIntoConstraints = false
 
         canvasView = AnnotationCanvasView(image: image, model: model)
         canvasView.frame = CGRect(origin: .zero, size: image.size)
 
-        let scrollView = NSScrollView(frame: NSRect(origin: .zero, size: displaySize))
+        // Create a scroll view with centering clip view
+        let scrollView = NSScrollView()
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.contentView = CenteringClipView()
         scrollView.documentView = canvasView
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = true
         scrollView.autohidesScrollers = true
         scrollView.backgroundColor = NSColor(white: 0.12, alpha: 1)
-        scrollView.autoresizingMask = [.width, .height]
+        scrollView.drawsBackground = true
 
         container.addSubview(scrollView)
         container.addSubview(toolbar)
+        
+        // Use Auto Layout for flexible sizing
+        NSLayoutConstraint.activate([
+            toolbar.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            toolbar.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            toolbar.topAnchor.constraint(equalTo: container.topAnchor),
+            toolbar.heightAnchor.constraint(equalToConstant: toolbarHeight),
+            
+            scrollView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            scrollView.topAnchor.constraint(equalTo: toolbar.bottomAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: container.bottomAnchor)
+        ])
+        
         view = container
     }
 
@@ -83,8 +100,8 @@ class AnnotationEditorViewController: NSViewController {
             return b
         }
 
+        let selectBtn  = iconBtn("hand.point.up.left",    "Select",            #selector(selectSelect))
         let penBtn     = iconBtn("pencil",               "Pen",               #selector(selectPen))
-        let eraserBtn  = iconBtn("eraser",               "Eraser",            #selector(selectEraser))
         let textBtn    = iconBtn("textformat",            "Text",              #selector(selectText))
         let stickerBtn = iconBtn("face.smiling",          "Sticker",           #selector(selectSticker))
         let arrowBtn   = iconBtn("arrow.up.right",        "Arrow",             #selector(selectArrow))
@@ -104,14 +121,15 @@ class AnnotationEditorViewController: NSViewController {
         colorPopup.selectItem(at: 0) // default: Red
         model.currentColor = Self.presetColors[0].1
 
-        // Stroke width stepper
-        let widthLabel   = NSTextField(labelWithString: "Size:")
-        let widthStepper = NSStepper(frame: NSRect(x: 0, y: 0, width: 19, height: 27))
-        widthStepper.minValue = 1
-        widthStepper.maxValue = 40
-        widthStepper.integerValue = Int(model.lineWidth)
-        widthStepper.target = self
-        widthStepper.action = #selector(lineWidthChanged(_:))
+        // Stroke width segmented control
+        let widthLabel = NSTextField(labelWithString: "Thickness:")
+        thicknessControl = NSSegmentedControl(labels: ["Thin", "Medium", "Thick"], 
+                                                trackingMode: .selectOne, 
+                                                target: self, 
+                                                action: #selector(thicknessChanged(_:)))
+        thicknessControl.selectedSegment = 1 // default: Medium
+        model.lineWidth = 4.0 // Medium thickness
+        model.arrowSize = 4.0 // Medium thickness
 
         // Emoji button
         emojiBtn = NSButton(title: model.selectedEmoji,
@@ -125,8 +143,8 @@ class AnnotationEditorViewController: NSViewController {
             let b = NSBox(); b.boxType = .separator; return b
         }
 
-        let leftItems: [NSView]  = [penBtn, eraserBtn, textBtn, arrowBtn, stickerBtn,
-                                    sep(), colorPopup, widthLabel, widthStepper,
+        let leftItems: [NSView]  = [selectBtn, penBtn, textBtn, arrowBtn, stickerBtn,
+                                    sep(), colorPopup, widthLabel, thicknessControl,
                                     sep(), emojiBtn]
         let rightItems: [NSView] = [undoBtn, sep(), copyBtn, saveBtn]
 
@@ -144,6 +162,11 @@ class AnnotationEditorViewController: NSViewController {
 
         leftStack.translatesAutoresizingMaskIntoConstraints  = false
         rightStack.translatesAutoresizingMaskIntoConstraints = false
+        leftStack.setContentHuggingPriority(.defaultHigh, for: .horizontal)
+        rightStack.setContentHuggingPriority(.required, for: .horizontal)
+        leftStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        rightStack.setContentCompressionResistancePriority(.required, for: .horizontal)
+        
         bar.addSubview(leftStack)
         bar.addSubview(rightStack)
 
@@ -151,6 +174,7 @@ class AnnotationEditorViewController: NSViewController {
             leftStack.leadingAnchor.constraint(equalTo: bar.leadingAnchor),
             leftStack.topAnchor.constraint(equalTo: bar.topAnchor),
             leftStack.bottomAnchor.constraint(equalTo: bar.bottomAnchor),
+            leftStack.trailingAnchor.constraint(lessThanOrEqualTo: rightStack.leadingAnchor, constant: -8),
             rightStack.trailingAnchor.constraint(equalTo: bar.trailingAnchor),
             rightStack.topAnchor.constraint(equalTo: bar.topAnchor),
             rightStack.bottomAnchor.constraint(equalTo: bar.bottomAnchor),
@@ -172,11 +196,43 @@ class AnnotationEditorViewController: NSViewController {
 
     // MARK: - Tool selection
 
-    @objc private func selectPen()     { model.currentTool = .pen;     canvasView.updateCursor() }
-    @objc private func selectEraser()  { model.currentTool = .eraser;  canvasView.updateCursor() }
-    @objc private func selectText()    { model.currentTool = .text;    canvasView.updateCursor() }
-    @objc private func selectSticker() { model.currentTool = .sticker; canvasView.updateCursor() }
-    @objc private func selectArrow()   { model.currentTool = .arrow;   canvasView.updateCursor() }
+    @objc private func selectSelect() {
+        model.currentTool = .select
+        canvasView.updateCursor()
+    }
+    
+    @objc private func selectPen() {
+        model.currentTool = .pen
+        syncThicknessControl(for: model.lineWidth)
+        canvasView.updateCursor()
+    }
+    
+    @objc private func selectText() {
+        model.currentTool = .text
+        canvasView.updateCursor()
+    }
+    
+    @objc private func selectSticker() {
+        model.currentTool = .sticker
+        canvasView.updateCursor()
+    }
+    
+    @objc private func selectArrow() {
+        model.currentTool = .arrow
+        syncThicknessControl(for: model.arrowSize)
+        canvasView.updateCursor()
+    }
+    
+    private func syncThicknessControl(for width: CGFloat) {
+        // Sync the segmented control to match current width
+        if width <= 2.5 {
+            thicknessControl.selectedSegment = 0 // Thin
+        } else if width <= 6.0 {
+            thicknessControl.selectedSegment = 1 // Medium
+        } else {
+            thicknessControl.selectedSegment = 2 // Thick
+        }
+    }
 
     // MARK: - Colour preset
 
@@ -184,12 +240,38 @@ class AnnotationEditorViewController: NSViewController {
         let idx = sender.indexOfSelectedItem
         guard idx >= 0, idx < Self.presetColors.count else { return }
         model.currentColor = Self.presetColors[idx].1
+        
+        // If in select mode and an annotation is selected, update its color
+        if model.currentTool == .select {
+            model.updateSelectedAnnotationColor(model.currentColor)
+            canvasView.needsDisplay = true
+        }
     }
 
     // MARK: - Stroke width
 
-    @objc private func lineWidthChanged(_ sender: NSStepper) {
-        model.lineWidth = CGFloat(sender.integerValue)
+    @objc private func thicknessChanged(_ sender: NSSegmentedControl) {
+        let thickness: CGFloat
+        switch sender.selectedSegment {
+        case 0: thickness = 2.0  // Thin
+        case 1: thickness = 4.0  // Medium
+        case 2: thickness = 8.0  // Thick
+        default: thickness = 4.0
+        }
+        
+        // Apply to the appropriate property based on current tool
+        switch model.currentTool {
+        case .pen:
+            model.lineWidth = thickness
+        case .arrow:
+            model.arrowSize = thickness
+        case .select:
+            // Update selected annotation's thickness
+            model.updateSelectedAnnotationThickness(thickness)
+            canvasView.needsDisplay = true
+        case .text, .sticker, .eraser:
+            break // Thickness doesn't apply to these tools
+        }
     }
 
     // MARK: - Emoji Picker
@@ -264,6 +346,30 @@ class AnnotationEditorViewController: NSViewController {
                 label.animator().alphaValue = 0
             } completionHandler: { label.removeFromSuperview() }
         }
+    }
+}
+
+// MARK: - Centering Clip View
+
+/// A clip view that centers the document view when it's smaller than the visible area
+class CenteringClipView: NSClipView {
+    override func constrainBoundsRect(_ proposedBounds: NSRect) -> NSRect {
+        var rect = super.constrainBoundsRect(proposedBounds)
+        guard let documentView = documentView else { return rect }
+        
+        let documentFrame = documentView.frame
+        
+        // Center horizontally if document is narrower than clip view
+        if documentFrame.width < rect.width {
+            rect.origin.x = -(rect.width - documentFrame.width) / 2
+        }
+        
+        // Center vertically if document is shorter than clip view
+        if documentFrame.height < rect.height {
+            rect.origin.y = -(rect.height - documentFrame.height) / 2
+        }
+        
+        return rect
     }
 }
 

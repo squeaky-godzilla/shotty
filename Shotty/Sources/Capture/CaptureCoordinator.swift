@@ -103,10 +103,18 @@ final class CaptureCoordinator: NSObject, NSWindowDelegate {
 
         let editorVC = AnnotationEditorViewController(image: image, displaySize: displaySize) { }
 
+        // Ensure minimum window size to prevent GUI collapse
+        let minWindowWidth: CGFloat = 640
+        let minWindowHeight: CGFloat = 400
+        let toolbarHeight: CGFloat = 96
+        
+        let windowWidth = max(displaySize.width, minWindowWidth)
+        let windowHeight = max(displaySize.height + toolbarHeight, minWindowHeight)
+
         let window = NSWindow(
             contentRect: CGRect(origin: .zero,
-                                size: CGSize(width: displaySize.width,
-                                             height: displaySize.height + 48)),
+                                size: CGSize(width: windowWidth,
+                                             height: windowHeight)),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
@@ -115,6 +123,7 @@ final class CaptureCoordinator: NSObject, NSWindowDelegate {
         window.contentViewController = editorVC
         window.delegate = self
         window.isReleasedWhenClosed = false
+        window.minSize = CGSize(width: minWindowWidth, height: minWindowHeight)
         window.center()
 
         NSApp.setActivationPolicy(.regular)

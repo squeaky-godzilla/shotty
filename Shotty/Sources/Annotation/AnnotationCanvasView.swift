@@ -10,6 +10,10 @@ class AnnotationCanvasView: NSView {
     // Arrow tool state: first click sets origin, mouse move previews, second click commits
     private var arrowOrigin: CGPoint?
     private var arrowPreviewTip: CGPoint?
+    
+    // Drag state for moving selected annotations
+    private var isDraggingAnnotation = false
+    private var dragStartPoint: CGPoint?
 
     init(image: NSImage, model: AnnotationModel) {
         self.baseImage = image
@@ -69,8 +73,63 @@ class AnnotationCanvasView: NSView {
         // 7. Arrow preview (while placing second point)
         if let origin = arrowOrigin, let tip = arrowPreviewTip {
             drawArrow(from: origin, to: tip,
-                      color: model.currentColor, lineWidth: model.lineWidth, in: ctx)
+                      color: model.currentColor, lineWidth: model.arrowSize, in: ctx)
         }
+        
+        // 8. Selection highlight
+        if let selected = model.selectedAnnotation {
+            drawSelectionHighlight(for: selected, in: ctx)
+        }
+    }
+    
+    private func drawSelectionHighlight(for selection: SelectedAnnotation, in ctx: CGContext) {
+        ctx.saveGState()
+        ctx.setStrokeColor(NSColor.systemBlue.cgColor)
+        ctx.setLineWidth(2.0)
+        ctx.setLineDash(phase: 0, lengths: [4, 4])
+        
+        switch selection {
+        case .stroke(let id):
+            guard let stroke = model.strokes.first(where: { $0.id == id }),
+                  !stroke.points.isEmpty else { break }
+            // Draw bounding box around stroke
+            let minX = stroke.points.map(\.x).min() ?? 0
+            let maxX = stroke.points.map(\.x).max() ?? 0
+            let minY = stroke.points.map(\.y).min() ?? 0
+            let maxY = stroke.points.map(\.y).max() ?? 0
+            let padding: CGFloat = 8
+            ctx.stroke(CGRect(x: minX - padding, y: minY - padding,
+                            width: maxX - minX + padding * 2, height: maxY - minY + padding * 2))
+            
+        case .arrow(let id):
+            guard let arrow = model.arrows.first(where: { $0.id == id }) else { break }
+            let minX = min(arrow.from.x, arrow.to.x)
+            let maxX = max(arrow.from.x, arrow.to.x)
+            let minY = min(arrow.from.y, arrow.to.y)
+            let maxY = max(arrow.from.y, arrow.to.y)
+            let padding: CGFloat = 8
+            ctx.stroke(CGRect(x: minX - padding, y: minY - padding,
+                            width: maxX - minX + padding * 2, height: maxY - minY + padding * 2))
+            
+        case .text(let id):
+            guard let text = model.texts.first(where: { $0.id == id }) else { break }
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: text.fontSize, weight: .bold)
+            ]
+            let str = NSAttributedString(string: text.text, attributes: attrs)
+            let size = str.size()
+            let padding: CGFloat = 4
+            ctx.stroke(CGRect(x: text.origin.x - padding, y: text.origin.y - padding,
+                            width: size.width + padding * 2, height: size.height + padding * 2))
+            
+        case .sticker(let id):
+            guard let sticker = model.stickers.first(where: { $0.id == id }) else { break }
+            let radius = sticker.size / 2 + 8
+            ctx.strokeEllipse(in: CGRect(x: sticker.center.x - radius, y: sticker.center.y - radius,
+                                        width: radius * 2, height: radius * 2))
+        }
+        
+        ctx.restoreGState()
     }
 
     private func drawArrow(from: CGPoint, to: CGPoint,
@@ -147,7 +206,7 @@ class AnnotationCanvasView: NSView {
         if let tf = activeTextField { commitTextAnnotation(tf) }
 
         switch model.currentTool {
-        case .pen, .eraser:
+        case .pen:
             model.beginStroke(at: pt)
         case .text:
             startTextAnnotation(at: pt)
@@ -155,37 +214,99 @@ class AnnotationCanvasView: NSView {
             model.addSticker(at: pt)
             needsDisplay = true
         case .arrow:
-            if let origin = arrowOrigin {
-                // Second click — commit the arrow
-                model.addArrow(from: origin, to: pt)
-                arrowOrigin = nil
-                arrowPreviewTip = nil
+            // Click to start arrow
+            arrowOrigin = pt
+            arrowPreviewTip = pt
+            needsDisplay = true
+        case .select:
+            // Try to select an annotation at the clicked point
+            if model.selectAnnotation(at: pt) {
+                isDraggingAnnotation = true
+                dragStartPoint = pt
+                
+                // Double-click on text to edit
+                if event.clickCount == 2, case .text(let id) = model.selectedAnnotation {
+                    editTextAnnotation(id: id)
+                    isDraggingAnnotation = false
+                    dragStartPoint = nil
+                }
+                
+                needsDisplay = true
             } else {
-                // First click — set origin
-                arrowOrigin = pt
-                arrowPreviewTip = pt
+                model.selectedAnnotation = nil
+                isDraggingAnnotation = false
+                dragStartPoint = nil
+                needsDisplay = true
             }
+        case .eraser:
+            break // Eraser removed
+        }
+    }
+    
+    private func editTextAnnotation(id: UUID) {
+        guard let idx = model.texts.firstIndex(where: { $0.id == id }) else { return }
+        let textAnnotation = model.texts[idx]
+        
+        // Remove from committed texts temporarily
+        model.texts[idx].isEditing = true
+        
+        let tf = NSTextField(frame: CGRect(x: textAnnotation.origin.x, 
+                                          y: textAnnotation.origin.y, 
+                                          width: 250, height: 30))
+        tf.isEditable = true
+        tf.isSelectable = true
+        tf.isBordered = false
+        tf.drawsBackground = false
+        tf.textColor = textAnnotation.color
+        tf.font = NSFont.systemFont(ofSize: textAnnotation.fontSize, weight: .bold)
+        tf.stringValue = textAnnotation.text
+        tf.focusRingType = .none
+        tf.delegate = self
+        tf.tag = 99
+        addSubview(tf)
+        window?.makeFirstResponder(tf)
+        activeTextField = tf
+        activeTextAnnotationID = id
+        needsDisplay = true
+    }
+
+
+
+    override func mouseDragged(with event: NSEvent) {
+        let pt = convert(event.locationInWindow, from: nil)
+        
+        if model.currentTool == .pen {
+            model.continueStroke(to: pt)
+            needsDisplay = true
+        } else if model.currentTool == .arrow && arrowOrigin != nil {
+            // Update arrow preview while dragging
+            arrowPreviewTip = pt
+            needsDisplay = true
+        } else if model.currentTool == .select && isDraggingAnnotation, let start = dragStartPoint {
+            let dx = pt.x - start.x
+            let dy = pt.y - start.y
+            model.moveSelectedAnnotation(dx: dx, dy: dy)
+            dragStartPoint = pt
             needsDisplay = true
         }
     }
 
-    override func mouseMoved(with event: NSEvent) {
-        guard model.currentTool == .arrow, arrowOrigin != nil else { return }
-        arrowPreviewTip = convert(event.locationInWindow, from: nil)
-        needsDisplay = true
-    }
-
-    override func mouseDragged(with event: NSEvent) {
-        let pt = convert(event.locationInWindow, from: nil)
-        guard model.currentTool == .pen || model.currentTool == .eraser else { return }
-        model.continueStroke(to: pt)
-        needsDisplay = true
-    }
-
     override func mouseUp(with event: NSEvent) {
-        guard model.currentTool == .pen || model.currentTool == .eraser else { return }
-        model.endStroke()
-        needsDisplay = true
+        let pt = convert(event.locationInWindow, from: nil)
+        
+        if model.currentTool == .pen {
+            model.endStroke()
+            needsDisplay = true
+        } else if model.currentTool == .arrow, let origin = arrowOrigin {
+            // Release to finish arrow
+            model.addArrow(from: origin, to: pt)
+            arrowOrigin = nil
+            arrowPreviewTip = nil
+            needsDisplay = true
+        } else if model.currentTool == .select {
+            isDraggingAnnotation = false
+            dragStartPoint = nil
+        }
     }
 
     // MARK: - Text Annotation
@@ -233,11 +354,25 @@ class AnnotationCanvasView: NSView {
     // MARK: - Keyboard
 
     override func keyDown(with event: NSEvent) {
-        // Escape cancels a pending arrow origin
+        // Delete/Backspace key (keyCode 51 = Delete, 117 = Forward Delete)
+        if event.keyCode == 51 || event.keyCode == 117 {
+            if model.selectedAnnotation != nil {
+                model.deleteSelectedAnnotation()
+                needsDisplay = true
+                return
+            }
+        }
+        
+        // Escape cancels a pending arrow origin or deselects
         if event.keyCode == 53 {
             if arrowOrigin != nil {
                 arrowOrigin = nil
                 arrowPreviewTip = nil
+                needsDisplay = true
+                return
+            }
+            if model.selectedAnnotation != nil {
+                model.selectedAnnotation = nil
                 needsDisplay = true
                 return
             }
@@ -296,14 +431,13 @@ class AnnotationCanvasView: NSView {
 
     func updateCursor() {
         switch model.currentTool {
+        case .select:  NSCursor.arrow.set()
         case .pen:     NSCursor.crosshair.set()
-        case .eraser:  NSCursor.disappearingItem.set()
         case .text:    NSCursor.iBeam.set()
         case .sticker: NSCursor.pointingHand.set()
         case .arrow:   NSCursor.crosshair.set()
+        case .eraser:  NSCursor.arrow.set() // Fallback (should not be used)
         }
-        // Arrow tool needs mouseMoved events for live preview
-        window?.acceptsMouseMovedEvents = (model.currentTool == .arrow)
     }
 
     override func resetCursorRects() {
