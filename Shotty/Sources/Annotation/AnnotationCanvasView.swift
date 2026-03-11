@@ -3,6 +3,7 @@ import AppKit
 class AnnotationCanvasView: NSView {
     var model: AnnotationModel
     var baseImage: NSImage
+    var shouldDrawWatermark: Bool = false
 
     private var activeTextField: NSTextField?
     private var activeTextAnnotationID: UUID?
@@ -80,6 +81,56 @@ class AnnotationCanvasView: NSView {
         if let selected = model.selectedAnnotation {
             drawSelectionHighlight(for: selected, in: ctx)
         }
+        
+        // 9. Watermark (bottom right)
+        if shouldDrawWatermark {
+            drawWatermark()
+        }
+    }
+    
+    private func drawWatermark() {
+        let text = "Made with Shotty"
+        let linkText = "github.com/squeaky-godzilla/shotty"
+        let padding: CGFloat = 12
+        let lineSpacing: CGFloat = 2
+        
+        let textAttrs: [NSAttributedString.Key: Any] = [
+            .foregroundColor: NSColor.white.withAlphaComponent(0.7),
+            .font: NSFont.systemFont(ofSize: 10, weight: .medium)
+        ]
+        let linkAttrs: [NSAttributedString.Key: Any] = [
+            .foregroundColor: NSColor.white.withAlphaComponent(0.6),
+            .font: NSFont.systemFont(ofSize: 9, weight: .regular)
+        ]
+        
+        let textStr = NSAttributedString(string: text, attributes: textAttrs)
+        let linkStr = NSAttributedString(string: linkText, attributes: linkAttrs)
+        
+        let textSize = textStr.size()
+        let linkSize = linkStr.size()
+        let maxWidth = max(textSize.width, linkSize.width)
+        
+        let bgRect = CGRect(
+            x: bounds.width - maxWidth - padding * 2,
+            y: padding,
+            width: maxWidth + padding * 2,
+            height: textSize.height + linkSize.height + lineSpacing + padding * 2
+        )
+        
+        // Semi-transparent background
+        NSColor.black.withAlphaComponent(0.5).setFill()
+        NSBezierPath(roundedRect: bgRect, xRadius: 4, yRadius: 4).fill()
+        
+        // Draw text
+        textStr.draw(at: CGPoint(
+            x: bounds.width - textSize.width - padding,
+            y: padding + linkSize.height + lineSpacing + padding
+        ))
+        
+        linkStr.draw(at: CGPoint(
+            x: bounds.width - linkSize.width - padding,
+            y: padding + padding
+        ))
     }
     
     private func drawSelectionHighlight(for selection: SelectedAnnotation, in ctx: CGContext) {
@@ -250,15 +301,19 @@ class AnnotationCanvasView: NSView {
         // Remove from committed texts temporarily
         model.texts[idx].isEditing = true
         
+        // Apply same offset as when creating text to match rendering position
+        let font = NSFont.systemFont(ofSize: textAnnotation.fontSize, weight: .bold)
+        let yOffset = font.descender
+        
         let tf = NSTextField(frame: CGRect(x: textAnnotation.origin.x, 
-                                          y: textAnnotation.origin.y, 
+                                          y: textAnnotation.origin.y + yOffset - 2, 
                                           width: 250, height: 30))
         tf.isEditable = true
         tf.isSelectable = true
         tf.isBordered = false
         tf.drawsBackground = false
         tf.textColor = textAnnotation.color
-        tf.font = NSFont.systemFont(ofSize: textAnnotation.fontSize, weight: .bold)
+        tf.font = font
         tf.stringValue = textAnnotation.text
         tf.focusRingType = .none
         tf.delegate = self
@@ -315,13 +370,18 @@ class AnnotationCanvasView: NSView {
         let annotationID = model.addText(at: point)
         activeTextAnnotationID = annotationID
 
-        let tf = NSTextField(frame: CGRect(x: point.x, y: point.y, width: 250, height: 30))
+        // Create text field with offset to account for NSAttributedString baseline drawing
+        // NSTextField has internal padding, so we offset to match where draw(at:) will render
+        let font = NSFont.systemFont(ofSize: model.fontSize, weight: .bold)
+        let yOffset = font.descender // Adjust for text baseline
+        
+        let tf = NSTextField(frame: CGRect(x: point.x, y: point.y + yOffset - 2, width: 250, height: 30))
         tf.isEditable = true
         tf.isSelectable = true
         tf.isBordered = false
         tf.drawsBackground = false
         tf.textColor = model.currentColor
-        tf.font = NSFont.systemFont(ofSize: model.fontSize, weight: .bold)
+        tf.font = font
         tf.placeholderString = "Type here…"
         tf.focusRingType = .none
         tf.delegate = self

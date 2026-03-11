@@ -11,6 +11,8 @@ class AnnotationEditorViewController: NSViewController {
     private var emojiBtn: NSButton!
     private var colorPopup: NSPopUpButton!
     private var thicknessControl: NSSegmentedControl!
+    private var watermarkCheckbox: NSButton!
+    private var shouldAddWatermark = false
 
     // Preset colours — (display name, NSColor)
     private static let presetColors: [(String, NSColor)] = [
@@ -138,6 +140,11 @@ class AnnotationEditorViewController: NSViewController {
         emojiBtn.font = NSFont.systemFont(ofSize: 26)
         emojiBtn.isBordered = false
         emojiBtn.toolTip = "Choose sticker"
+        
+        // Watermark checkbox
+        watermarkCheckbox = NSButton(checkboxWithTitle: "Add watermark", target: self, action: #selector(watermarkToggled(_:)))
+        watermarkCheckbox.toolTip = "Add 'Made with Shotty' link at bottom right"
+        watermarkCheckbox.state = .off
 
         func sep() -> NSView {
             let b = NSBox(); b.boxType = .separator; return b
@@ -146,7 +153,7 @@ class AnnotationEditorViewController: NSViewController {
         let leftItems: [NSView]  = [selectBtn, penBtn, textBtn, arrowBtn, stickerBtn,
                                     sep(), colorPopup, widthLabel, thicknessControl,
                                     sep(), emojiBtn]
-        let rightItems: [NSView] = [undoBtn, sep(), copyBtn, saveBtn]
+        let rightItems: [NSView] = [watermarkCheckbox, sep(), undoBtn, sep(), copyBtn, saveBtn]
 
         let leftStack  = NSStackView(views: leftItems)
         leftStack.orientation = .horizontal
@@ -285,6 +292,14 @@ class AnnotationEditorViewController: NSViewController {
         }
         present(picker, asPopoverRelativeTo: sender.bounds, of: sender,
                 preferredEdge: .minY, behavior: .transient)
+    }
+
+    // MARK: - Watermark
+    
+    @objc private func watermarkToggled(_ sender: NSButton) {
+        shouldAddWatermark = (sender.state == .on)
+        canvasView.shouldDrawWatermark = shouldAddWatermark
+        canvasView.needsDisplay = true
     }
 
     // MARK: - Undo

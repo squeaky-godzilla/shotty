@@ -18,7 +18,30 @@ final class WindowPickerOverlayController {
         controller.completion = completion
 
         let windows = content.windows
-            .filter { $0.isOnScreen && $0.frame.width > 10 && $0.frame.height > 10 }
+            .filter { window in
+                // Filter out tiny windows, system UI, and desktop
+                guard window.isOnScreen,
+                      window.frame.width > 50,
+                      window.frame.height > 50,
+                      let app = window.owningApplication else {
+                    return false
+                }
+                
+                // Exclude Dock, Wallpaper, Window Server, and other system windows
+                let excludedApps = ["Dock", "Window Server", "Wallpaper", ""]
+                guard !excludedApps.contains(app.applicationName) else {
+                    return false
+                }
+                
+                // Exclude windows that are the same size as the screen (likely desktop/wallpaper)
+                let screenSize = content.displays.first?.frame.size ?? .zero
+                if window.frame.width >= screenSize.width * 0.95 &&
+                   window.frame.height >= screenSize.height * 0.95 {
+                    return false
+                }
+                
+                return true
+            }
         slog("WindowPicker: \(windows.count) SCK windows found")
         controller.present(windows: windows)
     }
@@ -144,14 +167,18 @@ final class WindowPickerView: NSView {
     override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); window?.makeFirstResponder(self) }
     override var isFlipped: Bool { false }
 
-    // SCWindow.frame: top-left origin in global CG coords → convert to view-local bottom-left.
+    // SCWindow.frame uses AppKit/Quartz coordinates (origin at top-left, Y increases downward)
+    // NSView with isFlipped=false uses bottom-left origin (Y increases upward)
+    // Need to flip the Y coordinate
     private func viewRect(for w: SCWindow) -> CGRect {
-        let f = w.frame
-        return CGRect(
-            x: f.origin.x - screen.frame.origin.x,
-            y: screen.frame.height - (f.origin.y - screen.frame.origin.y) - f.height,
-            width: f.width, height: f.height
-        )
+        let windowFrame = w.frame
+        let screenFrame = screen.frame
+        
+        // Convert from top-left origin (Y down) to bottom-left origin (Y up)
+        let viewX = windowFrame.origin.x - screenFrame.origin.x
+        let viewY = screenFrame.height - windowFrame.origin.y - windowFrame.height
+        
+        return CGRect(x: viewX, y: viewY, width: windowFrame.width, height: windowFrame.height)
     }
 
     override func keyDown(with event: NSEvent) {
@@ -161,8 +188,16 @@ final class WindowPickerView: NSView {
     override func mouseMoved(with event: NSEvent) {
         let pt = convert(event.locationInWindow, from: nil)
         let old = hoveredIndex
-        hoveredIndex = windows.indices.last(where: { viewRect(for: windows[$0]).contains(pt) })
-        if old != hoveredIndex { needsDisplay = true }
+        
+        // SCShareableContent returns windows in back-to-front order,
+        // so we reverse to find the topmost (frontmost) window first
+        hoveredIndex = windows.indices.reversed().first(where: { 
+            viewRect(for: windows[$0]).contains(pt)
+        })
+        
+        if old != hoveredIndex { 
+            needsDisplay = true 
+        }
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -170,25 +205,37 @@ final class WindowPickerView: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
+        // Draw all windows with subtle outline
         for (i, w) in windows.enumerated() {
             let r = viewRect(for: w)
-            guard r.intersects(dirtyRect), i == hoveredIndex else { continue }
-
-            NSColor.systemBlue.withAlphaComponent(0.25).setFill()
-            r.fill()
-            NSColor.systemBlue.setStroke()
-            let path = NSBezierPath(rect: r.insetBy(dx: 1, dy: 1))
-            path.lineWidth = 2
-            path.stroke()
-
-            let title = w.owningApplication?.applicationName ?? ""
-            let attrs: [NSAttributedString.Key: Any] = [
-                .foregroundColor: NSColor.white,
-                .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
-                .backgroundColor: NSColor.black.withAlphaComponent(0.6)
-            ]
-            NSAttributedString(string: "  \(title)  ", attributes: attrs)
-                .draw(at: CGPoint(x: r.minX + 4, y: r.maxY - 20))
+            guard r.intersects(dirtyRect) else { continue }
+            
+            let isHovered = (i == hoveredIndex)
+            
+            if isHovered {
+                // Hovered window: bright blue highlight
+                NSColor.systemBlue.withAlphaComponent(0.25).setFill()
+                r.fill()
+                NSColor.systemBlue.setStroke()
+                let path = NSBezierPath(rect: r.insetBy(dx: 1, dy: 1))
+                path.lineWidth = 2
+                path.stroke()
+                
+                let title = w.owningApplication?.applicationName ?? ""
+                let attrs: [NSAttributedString.Key: Any] = [
+                    .foregroundColor: NSColor.white,
+                    .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
+                    .backgroundColor: NSColor.black.withAlphaComponent(0.6)
+                ]
+                NSAttributedString(string: "  \(title)  ", attributes: attrs)
+                    .draw(at: CGPoint(x: r.minX + 4, y: r.maxY - 20))
+            } else {
+                // Non-hovered window: subtle white outline
+                NSColor.white.withAlphaComponent(0.3).setStroke()
+                let path = NSBezierPath(rect: r.insetBy(dx: 0.5, dy: 0.5))
+                path.lineWidth = 1
+                path.stroke()
+            }
         }
 
         let hint = "Click a window to capture   •   Esc to cancel"
